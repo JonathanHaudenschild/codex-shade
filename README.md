@@ -16,7 +16,7 @@ Everything runs on your machine, and the key used to generate placeholders never
 leaves it.
 
 ```
-you type:   Bitte mail an erika.mustermann@ts.berlin, IBAN DE89 3704 0044 0532 0130 00
+you type:   Bitte mail an erika.mustermann@example.de, IBAN DE89 3704 0044 0532 0130 00
 shade says: blocked — EMAIL, IBAN. Send this instead:
             Bitte mail an <EMAIL_97029f>, IBAN <IBAN_924945>
 ```
@@ -297,7 +297,7 @@ and turns your transcript into noise.
 **Clear false positives as they appear:**
 
 ```bash
-shade allow "support@ts.berlin" "DE89370400440532013000"
+shade allow "support@example.de" "DE89370400440532013000"
 ```
 
 Allowlisted values are sent in full, every time, with no further checks — test
@@ -306,7 +306,7 @@ data belongs there, a real key does not.
 **Keep your own domain readable, if you want:**
 
 ```json
-{ "allow_email_domains": ["ts.berlin"] }
+{ "allow_email_domains": ["example.de"] }
 ```
 
 ---
@@ -337,20 +337,21 @@ That is a deliberate trade and you should know which way it points. Set
 
 ---
 
-## 10. Notes for Technologiestiftung Berlin
+## 10. Notes for users
 
-This tool helps with the TSB rules on AI use; it does not replace them.
+This tool helps with whatever privacy rules apply to your AI use; it does not
+replace them.
 
-It reduces accidental exposure of the categories the guidance names —
-credentials and tokens, personal data, financial data with a personal reference,
-Art. 9 special categories. It cannot judge whether a strategy paper is
-confidential, whether a procurement is still running, or whether a research
-result has been published. Those remain human decisions, and *"if in doubt, do
-not enter it"* still stands.
+It reduces accidental exposure of the obvious categories — credentials and
+tokens, personal data, financial data with a personal reference, GDPR Art. 9
+special categories. It cannot judge whether a strategy paper is confidential,
+whether a procurement is still running, or whether a research result has been
+published. Those remain human decisions, and *"if in doubt, do not enter it"*
+still stands.
 
 A caught secret is still a secret that existed in a prompt. If a real credential
-is blocked, rotate it and report to compliance@ts.berlin — a block means it did
-not reach the model, not that it was never at risk.
+is blocked, rotate it — a block means it did not reach the model, not that it
+was never at risk.
 
 ---
 
@@ -392,3 +393,8 @@ tools/sync-engine.sh --check ../claude-shade   # just report drift
 ## Licence
 
 MIT.
+
+## See also
+
+* [**claude-shade**](https://github.com/JonathanHaudenschild/claude-shade) — the
+  same engine as a Claude Code plugin instead of Codex CLI hooks.

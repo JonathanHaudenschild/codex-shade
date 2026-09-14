@@ -535,6 +535,7 @@ def cmd_run(args) -> int:
     # Tells the hooks to stand down on the prompt surface — see
     # config._apply_proxy_coordination.
     environment["SHADE_PROXY"] = "1"
+    environment["SHADE_PROXY_MODE"] = "dry-run" if settings.dry_run else "active"
 
     program = os.path.basename(args.command[0])
     if program.startswith("codex"):

@@ -245,3 +245,43 @@ class TestVaultConcurrency(ProxyTest):
         restored_proxy, n2 = fresh.reveal(self.engine.redact("proxy_side@example.com")[0])
         self.assertEqual(restored_hook, "hook_side@example.com")
         self.assertEqual(restored_proxy, "proxy_side@example.com")
+
+
+class TestProxyHookCoordination(unittest.TestCase):
+    """Regression: `shade run --dry-run` used to disable the prompt hook.
+
+    The hook stands down only when something else is actually redacting. In
+    dry-run the proxy forwards unchanged, so standing the hook down left the
+    prompt surface completely unguarded — worse than running no proxy at all.
+    """
+
+    def setUp(self):
+        self._saved = {k: os.environ.get(k) for k in ("SHADE_PROXY", "SHADE_PROXY_MODE", "SHADE_HOME")}
+        self._tmp = tempfile.TemporaryDirectory()
+        os.environ["SHADE_HOME"] = self._tmp.name
+
+    def tearDown(self):
+        for key, value in self._saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        self._tmp.cleanup()
+
+    def prompt_policy(self) -> dict:
+        return config.load(self._tmp.name)["policies"][config.PROMPT]
+
+    def test_no_proxy_keeps_the_hook_armed(self):
+        os.environ.pop("SHADE_PROXY", None)
+        os.environ.pop("SHADE_PROXY_MODE", None)
+        self.assertEqual(self.prompt_policy()["pii"], config.BLOCK)
+
+    def test_active_proxy_stands_the_hook_down(self):
+        os.environ["SHADE_PROXY"] = "1"
+        os.environ["SHADE_PROXY_MODE"] = "active"
+        self.assertEqual(self.prompt_policy()["pii"], config.OFF)
+
+    def test_dry_run_keeps_the_hook_armed(self):
+        os.environ["SHADE_PROXY"] = "1"
+        os.environ["SHADE_PROXY_MODE"] = "dry-run"
+        self.assertEqual(self.prompt_policy()["pii"], config.BLOCK)

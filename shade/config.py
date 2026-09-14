@@ -163,6 +163,12 @@ def _apply_proxy_coordination(config: dict) -> dict:
     file, and blocking a secret outright is still stronger than redacting it.
     An explicit SHADE_PROMPT_POLICY still wins, since it is applied after this.
     """
+    # Only an *actively redacting* proxy earns the hook standing down. In
+    # dry-run the proxy forwards unchanged, so switching the hook off there
+    # would leave the prompt surface completely unguarded -- strictly worse
+    # than running no proxy at all.
+    if os.environ.get("SHADE_PROXY_MODE") == "dry-run":
+        return config
     if not _as_bool(os.environ.get("SHADE_PROXY", "")):
         return config
     config.setdefault("policies", {})[PROMPT] = {severity: OFF for severity in SEVERITIES}

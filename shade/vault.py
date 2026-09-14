@@ -21,6 +21,7 @@ import json
 import os
 import re
 import secrets
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -82,6 +83,10 @@ class Vault:
         self.path = _ensure_home() / "vault.json"
         self._entries: Optional[dict] = None
         self._dirty = False
+        # The proxy is threaded and the hooks are separate processes, so the
+        # vault has concurrent writers. The lock covers this process; the
+        # merge-and-rename in flush() covers the rest.
+        self._lock = threading.RLock()
 
     # -- persistence -------------------------------------------------------
 
@@ -114,16 +119,60 @@ class Vault:
         return kept
 
     def flush(self) -> None:
-        if not self._dirty or self._entries is None:
-            return
-        entries = self._prune(self._entries)
-        payload = {"version": 1, "entries": entries}
-        temporary = self.path.with_suffix(".json.tmp")
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=1)
-        temporary.replace(self.path)
-        self._dirty = False
+        """Persist, merging with whatever else has written since we loaded.
+
+        Two failure modes are being avoided here. A shared temp filename made
+        concurrent writers race for the same rename, so one of them hit
+        FileNotFoundError. And a long-lived process holding stale in-memory
+        entries would overwrite anything a short-lived hook added behind its
+        back, silently losing placeholders and breaking `reveal`.
+        """
+        with self._lock:
+            if not self._dirty or self._entries is None:
+                return
+
+            merged = dict(self._entries)
+            on_disk = {}
+            if self.path.is_file():
+                try:
+                    with self.path.open(encoding="utf-8") as handle:
+                        payload = json.load(handle)
+                    if isinstance(payload, dict):
+                        on_disk = payload.get("entries", {}) or {}
+                except (OSError, ValueError):
+                    on_disk = {}
+            for key, entry in on_disk.items():
+                if key not in merged:
+                    merged[key] = entry
+                else:
+                    merged[key]["last_seen"] = max(
+                        float(merged[key].get("last_seen", 0)),
+                        float(entry.get("last_seen", 0)),
+                    )
+
+            entries = self._prune(merged)
+            self._entries = entries
+
+            # A unique temp name per writer: os.replace is atomic, so the last
+            # rename wins cleanly instead of two writers fighting over one path.
+            temporary = self.path.with_name(
+                f".vault.{os.getpid()}.{threading.get_ident():x}.tmp"
+            )
+            try:
+                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                    json.dump({"version": 1, "entries": entries}, handle,
+                              ensure_ascii=False, indent=1)
+                os.replace(temporary, self.path)
+            except OSError:
+                # Losing a vault write costs reversibility, never privacy --
+                # redaction already happened. Never let it break the request.
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            finally:
+                self._dirty = False
 
     # -- api ---------------------------------------------------------------
 
@@ -132,6 +181,10 @@ class Vault:
         if not self.enabled or severity not in self.store_severities:
             return token
 
+        with self._lock:
+            return self._remember_locked(token, label, severity, value)
+
+    def _remember_locked(self, token: str, label: str, severity: str, value: str) -> str:
         entries = self._load()
         key = token[1:-1]
         now = time.time()

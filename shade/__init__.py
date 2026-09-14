@@ -3,6 +3,6 @@
 Pure standard library, no network calls, no services to run.
 """
 
-__version__ = "0.3.2"
+__version__ = "0.4.0"
 
 from .engine import Engine, Finding, summarize  # noqa: F401

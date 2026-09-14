@@ -101,6 +101,32 @@ ln -sf "$PWD/bin/shade" ~/.local/bin/shade
 
 ---
 
+### Proxy mode (shared engine, manual wiring)
+
+The engine also ships an egress proxy that closes the tool-output hole — it sees
+the full request body on its way to the API, so it can substitute placeholders
+into your prompt *and* into `tool_result` blocks, then restore real values in the
+streamed response. Hooks cannot do either.
+
+```bash
+shade proxy --upstream https://api.openai.com
+```
+
+Then point Codex at it with a provider entry in `~/.codex/config.toml`:
+
+```toml
+[model_providers.shade]
+base_url = "http://127.0.0.1:<port>"
+```
+
+Unlike the Claude Code side, this is **not automated and not yet verified
+end to end for Codex** — `shade run` sets `ANTHROPIC_BASE_URL`, which Codex does
+not read. It is verified working against Claude Code; see
+[claude-shade §2](https://github.com/JonathanHaudenschild/claude-shade#2-the-proxy--closing-the-tool-output-hole).
+Treat Codex proxy mode as experimental.
+
+---
+
 ## 3. Configuration
 
 Layers, later wins:
@@ -397,4 +423,8 @@ MIT.
 ## See also
 
 * [**claude-shade**](https://github.com/JonathanHaudenschild/claude-shade) — the
-  same engine as a Claude Code plugin instead of Codex CLI hooks.
+  same engine as a Claude Code plugin instead of Codex CLI hooks, plus the
+  verified proxy mode.
+* [**og-local**](https://github.com/outgate-ai/og-local) — prior art for the
+  proxy approach, using an ONNX model rather than regexes. Finds unstructured
+  names shade needs a list for; costs an ~840 MB download and is BSL 1.1.

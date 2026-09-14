@@ -151,6 +151,24 @@ def _read_json(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _apply_proxy_coordination(config: dict) -> dict:
+    """When the egress proxy is in front, stand the prompt hook down.
+
+    The two layers overlap, and the proxy is strictly better at this one job:
+    it can substitute placeholders into the prompt, which no hook can do. Left
+    enabled, the hook would refuse the prompt *before* the proxy ever saw it —
+    so you would get a refusal where you could have had a clean substitution.
+
+    Everything else stays: `deny_paths` still refuses to open a credentials
+    file, and blocking a secret outright is still stronger than redacting it.
+    An explicit SHADE_PROMPT_POLICY still wins, since it is applied after this.
+    """
+    if not _as_bool(os.environ.get("SHADE_PROXY", "")):
+        return config
+    config.setdefault("policies", {})[PROMPT] = {severity: OFF for severity in SEVERITIES}
+    return config
+
+
 def _apply_env(config: dict) -> dict:
     for env_name, (target, kind) in _ENV_MAP.items():
         raw = os.environ.get(env_name)
@@ -188,7 +206,7 @@ def load(cwd: str | os.PathLike | None = None) -> dict:
         if candidate is not None and candidate.is_file():
             config = _deep_merge(config, _read_json(candidate))
 
-    return _apply_env(config)
+    return _apply_env(_apply_proxy_coordination(config))
 
 
 def action_for(config: dict, surface: str, severity: str) -> str:

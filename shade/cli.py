@@ -455,6 +455,131 @@ def cmd_doctor(args) -> int:
     return 1 if problems else 0
 
 
+# --------------------------------------------------------------------------
+# proxy
+# --------------------------------------------------------------------------
+
+
+def _proxy_settings(args) -> "proxy_module.ProxySettings":
+    from . import proxy as proxy_module
+
+    return proxy_module.ProxySettings(
+        upstream=args.upstream,
+        dry_run=args.dry_run,
+        fail_open=args.fail_open,
+        restore=not args.no_restore,
+        verbose=getattr(args, "verbose", False),
+    )
+
+
+def cmd_proxy(args) -> int:
+    from . import proxy as proxy_module
+
+    engine = _engine()
+
+    def report(event: dict) -> None:
+        kind = event.get("event")
+        if kind in ("redact", "scan"):
+            verb = "would redact" if kind == "scan" else "redacted"
+            print(f"  {verb}: {event['summary']}  ({event['path']})", flush=True)
+        elif kind:
+            print(f"  {kind}: {event.get('detail', '')}", flush=True)
+
+    settings = _proxy_settings(args)
+    server = proxy_module.serve(engine, args.port, settings, report)
+    host, port = server.server_address
+    print(f"shade proxy listening on http://{host}:{port}  ->  {settings.upstream}")
+    if settings.dry_run:
+        print("  DRY RUN — traffic is forwarded unchanged; findings are only reported")
+    else:
+        print(f"  redacting requests; {'restoring' if settings.restore else 'NOT restoring'} responses")
+        print(f"  on redaction failure: {'forward anyway (--fail-open)' if settings.fail_open else 'refuse to send'}")
+    print()
+    print("  point an agent at it:")
+    print(f"    ANTHROPIC_BASE_URL=http://{host}:{port} claude")
+    print("  or let shade do it:   shade run claude")
+    print()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nshade proxy stopped")
+    finally:
+        server.server_close()
+    return 0
+
+
+def cmd_run(args) -> int:
+    """Run an agent with its API traffic routed through the proxy."""
+    from . import proxy as proxy_module
+    import threading
+
+    if not args.command:
+        print("usage: shade run <command> [args...]   e.g. shade run claude", file=sys.stderr)
+        return 2
+
+    engine = _engine()
+    events: list[dict] = []
+    settings = _proxy_settings(args)
+    server = proxy_module.serve(engine, 0, settings, events.append)
+    host, port = server.server_address
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    environment = dict(os.environ)
+    base = f"http://{host}:{port}"
+    # ANTHROPIC_BASE_URL is verified to work with Claude Code, including with
+    # subscription OAuth. OPENAI_BASE_URL is set opportunistically for other
+    # clients; it is not a claim that every agent honours it.
+    environment["ANTHROPIC_BASE_URL"] = base
+    environment.setdefault("OPENAI_BASE_URL", base)
+    # Tells the hooks to stand down on the prompt surface — see
+    # config._apply_proxy_coordination.
+    environment["SHADE_PROXY"] = "1"
+
+    program = os.path.basename(args.command[0])
+    if program.startswith("codex"):
+        print(
+            "shade: Codex does not read ANTHROPIC_BASE_URL. Point it here with a\n"
+            f"       [model_providers.shade] base_url = \"{base}\" entry in config.toml,\n"
+            "       or use `shade proxy` standalone. Proceeding anyway.",
+            file=sys.stderr,
+        )
+
+    mode = "DRY RUN" if settings.dry_run else "active"
+    print(f"shade: proxy {mode} on port {port}; starting {args.command[0]}", file=sys.stderr)
+
+    try:
+        completed = subprocess.run(args.command, env=environment)
+        code = completed.returncode
+    except FileNotFoundError:
+        print(f"shade: {args.command[0]} not found on PATH", file=sys.stderr)
+        code = 127
+    except KeyboardInterrupt:
+        code = 130
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    # Summarise afterwards rather than during: printing mid-session would
+    # scribble over an interactive agent's UI.
+    redactions = [e for e in events if e.get("event") in ("redact", "scan")]
+    errors = [e for e in events if e.get("event") in ("error", "upstream_error")]
+    print(file=sys.stderr)
+    if redactions:
+        counts: dict[str, int] = {}
+        for event in redactions:
+            for finding in event.get("findings", []):
+                counts[finding.label] = counts.get(finding.label, 0) + 1
+        verb = "would have redacted" if settings.dry_run else "redacted"
+        rendered = ", ".join(f"{label}x{count}" for label, count in sorted(counts.items(), key=lambda i: -i[1]))
+        print(f"shade: {verb} {rendered} across {len(redactions)} request(s)", file=sys.stderr)
+    else:
+        print("shade: nothing sensitive found in outbound traffic", file=sys.stderr)
+    for error in errors:
+        print(f"shade: {error['event']} — {error.get('detail', '')}", file=sys.stderr)
+    return code
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="shade", description=__doc__)
     parser.add_argument("--version", action="version", version=f"shade {__version__}")
@@ -507,6 +632,29 @@ def build_parser() -> argparse.ArgumentParser:
     vault = subparsers.add_parser("vault", help="inspect or clear the placeholder vault")
     vault.add_argument("--clear", action="store_true")
     vault.set_defaults(func=cmd_vault)
+
+    def add_proxy_args(sub):
+        sub.add_argument("--upstream", default=os.environ.get("SHADE_UPSTREAM", "https://api.anthropic.com"))
+        sub.add_argument("--dry-run", action="store_true",
+                         help="report what would be redacted; forward traffic unchanged")
+        sub.add_argument("--no-restore", action="store_true",
+                         help="leave placeholders in the response instead of restoring them")
+        sub.add_argument("--fail-open", action="store_true",
+                         help="forward a request even if redaction failed (unsafe)")
+
+    proxy_cmd = subparsers.add_parser(
+        "proxy", help="run the egress proxy: redact requests, restore responses"
+    )
+    proxy_cmd.add_argument("--port", type=int, default=0, help="0 picks a free port")
+    add_proxy_args(proxy_cmd)
+    proxy_cmd.set_defaults(func=cmd_proxy)
+
+    run_cmd = subparsers.add_parser(
+        "run", help="run an agent with its traffic routed through the proxy"
+    )
+    run_cmd.add_argument("command", nargs=argparse.REMAINDER, help="e.g. claude")
+    add_proxy_args(run_cmd)
+    run_cmd.set_defaults(func=cmd_run)
 
     doctor = subparsers.add_parser(
         "doctor", help="probe what each host actually enforces and self-test the hooks"

@@ -304,9 +304,13 @@ class TestNoFalseAssurance(unittest.TestCase):
         self.assertNotIn("Nothing was sent", text)
 
     def test_session_note_does_not_promise_filtering_in_dry_run(self):
-        start = Path(__file__).resolve().parent.parent / "hooks" / "cc_session_start.py"
-        if not start.is_file():
-            self.skipTest("claude adapter only")
+        hooks = Path(__file__).resolve().parent.parent / "hooks"
+        start = next(
+            (hooks / name for name in ("cc_session_start.py", "session_start.py")
+             if (hooks / name).is_file()),
+            None,
+        )
+        self.assertIsNotNone(start, "no session_start adapter in this checkout")
         text = start.read_text()
         self.assertIn("DRY-RUN", text)
         self.assertIn("NOT", text)
@@ -319,20 +323,38 @@ class TestSessionNoteModes(unittest.TestCase):
     was being filtered when it was not, and under an active proxy the model
     narrated "I only have a placeholder" — which, after restoration, reached the
     user as a sentence naming the real value while denying it could see it.
+
+    Runs against whichever adapter this checkout ships; the two emit the note
+    differently (Claude Code on stdout, Codex inside hookSpecificOutput).
     """
+
+    def setUp(self):
+        root = Path(__file__).resolve().parent.parent
+        for name in ("cc_session_start.py", "session_start.py"):
+            candidate = root / "hooks" / name
+            if candidate.is_file():
+                self.script = candidate
+                return
+        self.skipTest("no session_start adapter in this checkout")
 
     def note_for(self, mode):
         import subprocess
-        root = Path(__file__).resolve().parent.parent
-        script = root / "hooks" / "cc_session_start.py"
-        if not script.is_file():
-            self.skipTest("claude adapter only")
+
         env = dict(os.environ)
         env.pop("SHADE_PROXY_MODE", None)
         if mode:
             env["SHADE_PROXY_MODE"] = mode
-        return subprocess.run([sys.executable, str(script)], input='{"hook_event_name":"SessionStart"}',
-                              capture_output=True, text=True, env=env).stdout
+        result = subprocess.run(
+            [sys.executable, str(self.script)],
+            input='{"hook_event_name":"SessionStart"}',
+            capture_output=True, text=True, env=env,
+        )
+        raw = result.stdout
+        # Codex wraps the note in JSON; Claude Code writes it plain.
+        try:
+            return json.loads(raw)["hookSpecificOutput"]["additionalContext"]
+        except (ValueError, KeyError, TypeError):
+            return raw
 
     def test_dry_run_note_denies_filtering(self):
         note = self.note_for("dry-run")

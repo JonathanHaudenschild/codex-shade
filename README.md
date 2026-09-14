@@ -32,11 +32,18 @@ describes.
 
 | Channel | What shade does | Guarantee |
 |---|---|---|
-| What you type | **blocked**, with the clean text handed back to paste | prevented |
+| What you type | turn **blocked**, clean text handed back to paste | see caveat below |
 | Tool input (`shell`, MCP, web search, …) | rewritten (`updatedInput`) or refused | prevented |
 | Reading a credentials file | refused by path before it opens | prevented |
 | File contents / command output | **detected, not removed** | warning only |
 | What the model writes back | not touched | out of scope |
+
+**A block stops the turn, not necessarily the transmission.** Whether the text
+actually leaves is the host's decision, and the hook cannot observe it. Measured
+on Claude Code: with the prompt hook blocking, a headless run still issued one
+`/v1/messages` request containing the blocked value. Codex has **not** been
+measured either way — treat `block` as a speed bump, not a guarantee. Only the
+proxy, which substitutes at the wire, can make that guarantee.
 
 **Codex cannot rewrite a submitted prompt.** `UserPromptSubmit` supports
 `decision: "block"` and `additionalContext` only; `updatedInput` is `PreToolUse`
@@ -118,6 +125,17 @@ Then point Codex at it with a provider entry in `~/.codex/config.toml`:
 [model_providers.shade]
 base_url = "http://127.0.0.1:<port>"
 ```
+
+Dry-run first — it reports what it would redact while forwarding unchanged:
+
+```bash
+shade proxy --dry-run --upstream https://api.openai.com
+```
+
+Under `--dry-run` the hooks stay fully armed, because nothing else is redacting.
+Under an active proxy the prompt hook stands down, since the proxy substitutes
+instead of refusing. `shade log --tail 10` shows which layer acted: `block` is
+the hook, `redact` an active proxy, `warn` a dry run.
 
 Unlike the Claude Code side, this is **not automated and not yet verified
 end to end for Codex** — `shade run` sets `ANTHROPIC_BASE_URL`, which Codex does
@@ -387,7 +405,7 @@ was never at risk.
 python3 -m unittest discover -s tests -v
 ```
 
-41 tests, no dependencies. The check-digit validators are tested against
+71 tests, no dependencies. The check-digit validators are tested against
 published worked examples rather than against themselves, and two tests pin
 precision regressions found by running the scanner over real repositories.
 

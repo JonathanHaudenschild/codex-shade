@@ -310,3 +310,41 @@ class TestNoFalseAssurance(unittest.TestCase):
         text = start.read_text()
         self.assertIn("DRY-RUN", text)
         self.assertIn("NOT", text)
+
+
+class TestSessionNoteModes(unittest.TestCase):
+    """Each proxy mode needs a different briefing, or the model misreports.
+
+    Two failures seen in the field: under dry-run the model told the user data
+    was being filtered when it was not, and under an active proxy the model
+    narrated "I only have a placeholder" — which, after restoration, reached the
+    user as a sentence naming the real value while denying it could see it.
+    """
+
+    def note_for(self, mode):
+        import subprocess
+        root = Path(__file__).resolve().parent.parent
+        script = root / "hooks" / "cc_session_start.py"
+        if not script.is_file():
+            self.skipTest("claude adapter only")
+        env = dict(os.environ)
+        env.pop("SHADE_PROXY_MODE", None)
+        if mode:
+            env["SHADE_PROXY_MODE"] = mode
+        return subprocess.run([sys.executable, str(script)], input='{"hook_event_name":"SessionStart"}',
+                              capture_output=True, text=True, env=env).stdout
+
+    def test_dry_run_note_denies_filtering(self):
+        note = self.note_for("dry-run")
+        self.assertIn("DRY-RUN", note)
+        self.assertIn("NOT", note)
+
+    def test_active_note_explains_the_round_trip(self):
+        note = self.note_for("active")
+        self.assertIn("ROUND TRIP", note)
+        self.assertIn("do not narrate", note.lower())
+
+    def test_hooks_only_note_is_the_default(self):
+        note = self.note_for(None)
+        self.assertIn("privacy filter is active in this session", note)
+        self.assertNotIn("ROUND TRIP", note)

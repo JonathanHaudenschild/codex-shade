@@ -31,9 +31,12 @@ How to handle them:
 DRY_RUN_WARNING = """\
 [shade] NOTE: the privacy proxy is running in DRY-RUN. It reports what it would
 redact but forwards everything unchanged, so values in this session are NOT
-redacted. Do not tell the user their data is being filtered. The prompt hook
-remains active and will still refuse a prompt containing credentials or personal
-data.
+redacted. Do not tell the user their data is being filtered -- it is not.
+
+Hook policies are relaxed to `warn` in this mode so that real traffic reaches
+the proxy and can be reported on, so sensitive values WILL appear in your
+context. deny_paths still refuses credential-file reads. Treat anything you see
+as unprotected: do not copy it into files, commands or network requests.
 """
 
 PROXY_NOTE = """\

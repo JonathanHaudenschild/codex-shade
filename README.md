@@ -132,10 +132,23 @@ Dry-run first — it reports what it would redact while forwarding unchanged:
 shade proxy --dry-run --upstream https://api.openai.com
 ```
 
-Under `--dry-run` the hooks stay fully armed, because nothing else is redacting.
-Under an active proxy the prompt hook stands down, since the proxy substitutes
-instead of refusing. `shade log --tail 10` shows which layer acted: `block` is
-the hook, `redact` an active proxy, `warn` a dry run.
+Three modes, three answers:
+
+| Mode | Prompt hook | Other surfaces | `deny_paths` | Protected? |
+|---|---|---|---|---|
+| no proxy | `block` | as configured | enforced | yes, by hooks |
+| active proxy | `off` | as configured | enforced | yes, by the proxy |
+| `--dry-run` | `warn` | `warn` | enforced | **no — observation only** |
+
+Dry run exists to watch real traffic and report what *would* be redacted, so a
+hook that blocks defeats it — the prompt never reaches the layer you are
+evaluating. Policies relax to `warn` instead: traffic flows and you are told
+what was found. `deny_paths` stays on, since it prevents an irreversible read
+the proxy cannot undo. **Dry run protects nothing; use it only on work you would
+not mind sending unfiltered.**
+
+`shade log --tail 10` shows which layer acted: `block` is the hook, `redact` an
+active proxy, `warn` a dry run.
 
 Unlike the Claude Code side, this is **not automated and not yet verified
 end to end for Codex** — `shade run` sets `ANTHROPIC_BASE_URL`, which Codex does
@@ -405,7 +418,7 @@ was never at risk.
 python3 -m unittest discover -s tests -v
 ```
 
-71 tests, no dependencies. The check-digit validators are tested against
+72 tests, no dependencies. The check-digit validators are tested against
 published worked examples rather than against themselves, and two tests pin
 precision regressions found by running the scanner over real repositories.
 

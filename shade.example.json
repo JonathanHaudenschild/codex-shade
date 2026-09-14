@@ -1,0 +1,54 @@
+{
+  "_comment": "Copy to ~/.shade/config.json and edit. Run `shade status` to see what is in force.",
+
+  "enabled": true,
+
+  "names": [
+    "Erika Mustermann",
+    "Projekt Nordlicht"
+  ],
+
+  "allowlist": [
+    "support@example.de",
+    "DE89370400440532013000"
+  ],
+
+  "allow_email_domains": [],
+
+  "detectors": {
+    "de_postal_address": false,
+    "de_plz_city": false,
+    "ipv6": false,
+    "bic": false
+  },
+
+  "policies": {
+    "prompt":      { "secret": "block",  "pii": "block",  "special": "warn" },
+    "egress":      { "secret": "block",  "pii": "redact", "special": "warn" },
+    "shell":       { "secret": "block",  "pii": "warn",   "special": "warn" },
+    "local_write": { "secret": "warn",   "pii": "warn",   "special": "off"  },
+    "local_read":  { "secret": "warn",   "pii": "off",    "special": "off"  },
+    "output":      { "secret": "warn",   "pii": "warn",   "special": "off"  }
+  },
+
+  "deny_paths": [
+    "**/.env",
+    "**/.env.*",
+    "!**/.env.example",
+    "**/*.pem",
+    "**/*.key",
+    "**/id_rsa",
+    "**/.ssh/**",
+    "**/.aws/credentials",
+    "**/personendaten/**"
+  ],
+
+  "vault": {
+    "enabled": true,
+    "store_severities": ["pii", "special"],
+    "ttl_days": 30
+  },
+
+  "audit_log": true,
+  "max_scan_bytes": 400000
+}

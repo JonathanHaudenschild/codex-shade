@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.DS_Store
+# never commit a local vault, key or audit log if someone points SHADE_HOME here
+.shade/
+vault.json
+audit.jsonl
+key
+
+# local agent/editor settings
+.claude/settings.local.json

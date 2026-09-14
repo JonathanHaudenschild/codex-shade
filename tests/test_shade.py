@@ -224,16 +224,16 @@ class TestRedaction(SandboxedTest):
         self.assertEqual(restored, redacted)
 
     def test_allowlist(self):
-        engine = self.engine(allowlist=["support@example.de"])
-        text = "write to support@example.de or to private@example.org"
+        engine = self.engine(allowlist=["support@example.com"])
+        text = "write to support@example.com or to private@example.org"
         redacted, _ = engine.redact(text)
-        self.assertIn("support@example.de", redacted)
+        self.assertIn("support@example.com", redacted)
         self.assertNotIn("private@example.org", redacted)
 
     def test_allow_email_domains(self):
-        engine = self.engine(allow_email_domains=["example.de"])
-        redacted, _ = engine.redact("a@example.de and b@gmail.com")
-        self.assertIn("a@example.de", redacted)
+        engine = self.engine(allow_email_domains=["example.com"])
+        redacted, _ = engine.redact("a@example.com and b@gmail.com")
+        self.assertIn("a@example.com", redacted)
         self.assertNotIn("b@gmail.com", redacted)
 
     def test_configured_names(self):

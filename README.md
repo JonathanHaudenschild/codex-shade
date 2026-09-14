@@ -16,7 +16,7 @@ Everything runs on your machine, and the key used to generate placeholders never
 leaves it.
 
 ```
-you type:   Bitte mail an erika.mustermann@example.de, IBAN DE89 3704 0044 0532 0130 00
+you type:   Bitte mail an erika.mustermann@example.com, IBAN DE89 3704 0044 0532 0130 00
 shade says: blocked — EMAIL, IBAN. Send this instead:
             Bitte mail an <EMAIL_97029f>, IBAN <IBAN_924945>
 ```
@@ -297,7 +297,7 @@ and turns your transcript into noise.
 **Clear false positives as they appear:**
 
 ```bash
-shade allow "support@example.de" "DE89370400440532013000"
+shade allow "support@example.com" "DE89370400440532013000"
 ```
 
 Allowlisted values are sent in full, every time, with no further checks — test
@@ -306,7 +306,7 @@ data belongs there, a real key does not.
 **Keep your own domain readable, if you want:**
 
 ```json
-{ "allow_email_domains": ["example.de"] }
+{ "allow_email_domains": ["example.com"] }
 ```
 
 ---

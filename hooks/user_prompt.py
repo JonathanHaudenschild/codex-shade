@@ -46,7 +46,7 @@ def main(event: dict) -> None:
         else:
             reason = (
                 f"shade blocked this prompt: it contains {decision.reason}.\n"
-                "Nothing was sent. Run `shade redact 'your text'` and send the result instead."
+                "The turn was stopped. Run `shade redact 'your text'` and send the result instead."
             )
         emit(decision="block", reason=reason)
 

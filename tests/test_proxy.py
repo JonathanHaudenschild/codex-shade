@@ -285,3 +285,28 @@ class TestProxyHookCoordination(unittest.TestCase):
         os.environ["SHADE_PROXY"] = "1"
         os.environ["SHADE_PROXY_MODE"] = "dry-run"
         self.assertEqual(self.prompt_policy()["pii"], config.BLOCK)
+
+
+class TestNoFalseAssurance(unittest.TestCase):
+    """A privacy tool must never claim a guarantee it cannot deliver.
+
+    Measured: with the prompt hook blocking, Claude Code in headless (-p) mode
+    still sent one /v1/messages request containing the blocked value. So
+    "Nothing was sent" was false. Only the proxy, which substitutes at the wire,
+    can make that claim.
+    """
+
+    def test_block_message_makes_no_absolute_claim(self):
+        source = (Path(__file__).resolve().parent.parent / "hooks" / "cc_user_prompt.py")
+        if not source.is_file():
+            source = Path(__file__).resolve().parent.parent / "hooks" / "user_prompt.py"
+        text = source.read_text()
+        self.assertNotIn("Nothing was sent", text)
+
+    def test_session_note_does_not_promise_filtering_in_dry_run(self):
+        start = Path(__file__).resolve().parent.parent / "hooks" / "cc_session_start.py"
+        if not start.is_file():
+            self.skipTest("claude adapter only")
+        text = start.read_text()
+        self.assertIn("DRY-RUN", text)
+        self.assertIn("NOT", text)
